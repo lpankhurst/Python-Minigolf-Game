@@ -43,15 +43,16 @@ class Window(tk.Tk): # Inherit an empty window
             self.format_level3()
 
 
-        #Bind moving the cursor to call the aim_cursor method
+        #Launch the key bindings
         self.start()
+        # Cheat codes and boss- key needs to be always enabled
+        self.boss_key_bind = self.bind("<b>", self.boss_key)
+        self.bind("<m>", self.reduce_score)
         self.mainloop()
 
     #-- Methods --
     def format_general(self):
         #Basic layout of any level
-        #Creating the target arrow
-        self.pointer = self.canvas.create_line(20,705,100,720-100,fill="black",dash=(5,5),arrow=tk.LAST)
         #Creating the ball
         self.ball = Ball(self.canvas, self.restart, self.level_passed, self.current_level, self.colour)
         #Creating the floor
@@ -98,7 +99,7 @@ class Window(tk.Tk): # Inherit an empty window
         #Updating the coords of the line
         self.canvas.coords(self.pointer,self.ball_pos_x+15,self.ball_pos_y-15,x,y)#Pointer starts in center of ball
     
-    def fire(self, event): #Prepare the values before firing the ball
+    def fire(self, event): #Prepare the values before firing the ballc
         self.ball.x_velocity = (self.relative_x)/40 #Lowering the value of the velocity before passing them
         self.ball.y_velocity = (-self.relative_y)/40
         self.canvas.unbind("<Motion>", self.aim_bind) #Unbind so we cant aim
@@ -108,22 +109,20 @@ class Window(tk.Tk): # Inherit an empty window
         self.canvas.itemconfigure(self.shot_label, text="Shot number "+ str(self.num_shots))
         self.ball.animate_ball()
 
-    def start(self):
+    def start(self): #These are done in a function since these should not always be active
         self.aim_bind = self.canvas.bind("<Motion>", self.aim_cursor)
         self.shoot_bind = self.canvas.bind("<Button-1>", self.fire)
         self.pause_bind = self.bind("<space>", self.pause)
+        self.pointer = self.canvas.create_line(self.ball_pos_x+15,self.ball_pos_y-15,self.ball_pos_x+100,self.ball_pos_y-100,fill="black",dash=(5,5),arrow=tk.LAST) #Re-create the pointer, in the center of the ball
 
-    def restart(self):
+    def restart(self, caller="Legit"): # Restart the pointer after the ball has landed
         left_pos, bottom_pos = self.ball.get_coordinates() #Get the coordinates of the ball 
         self.ball_pos_x = left_pos #Update the ball_pos_x and y
         self.ball_pos_y = bottom_pos
-        self.pointer = self.canvas.create_line(self.ball_pos_x+15,self.ball_pos_y-15,self.ball_pos_x+100,self.ball_pos_y-100,fill="black",dash=(5,5),arrow=tk.LAST) #Re-create the pointer
         self.start()
     
     def pause(self, event):
         self.ball.pause()
-        self.canvas.create_text(700,400,text="Press S to save and exit",font=("Volleyball",12))
-        self.canvas.create_text(700,450,text=". . . Or Space to unpause",font=("Volleyball",12))
         self.save_bind = self.bind("<s>", self.save)
     
     def level_passed(self):
@@ -191,6 +190,24 @@ class Window(tk.Tk): # Inherit an empty window
         self.current_level = "Completed"
         self.save_exit_bind = self.bind("<Return>", self.save_exit)
 
+    def boss_key(self, event):
+        self.canvas.delete("all")
+        self.boss_image = ImageTk.PhotoImage(file = "boss_key.png") # Image made by myself
+        self.canvas.create_image(675,384,image = self.boss_image)
+        self.title("VS Code ")
+        self.unbind("<b>", self.boss_key_bind)
+        self.bind("b", self.undo_boss_key)
+    
+    def undo_boss_key(self, event):
+        self.destroy()
+        Window(self.colour,self.current_level,self.total_num_shots)
+
+    def reduce_score(self, event):
+        if self.num_shots >= 1:
+            self.num_shots -= 1
+            self.canvas.itemconfigure(self.shot_label, text="Shot number "+ str(self.num_shots))
+
+
 
 class Ball:
 
@@ -202,7 +219,6 @@ class Ball:
         self.canvas = canvas
         self.ball = self.canvas.create_oval(5,720,35,690,fill=self.ball_colour)#Radius 15px
         self.interval = 0.012 #Delay between frames of the ball moving
-        self.x = 0
         self.restart = restart #Methods from the other class
         self.level_passed = level_passed
         self.is_paused = False
@@ -213,12 +229,17 @@ class Ball:
         self.is_paused = not self.is_paused
         if self.is_paused:
             self.paused_label = self.canvas.create_text(650,350,text="GAME PAUSED",font=("Volleyball",20))
+            self.pause_label1 = self.canvas.create_text(700,400,text="Press S to save and exit",font=("Volleyball",12))
+            self.pause_label2 = self.canvas.create_text(700,450,text=". . . Or Space to unpause",font=("Volleyball",12))
         else:
-            self.canvas.delete(self.paused_label)
+            self.canvas.delete(self.paused_label,self.pause_label1,self.pause_label2)
     
     def animate_ball(self):
         if not self.is_paused:
-            self.canvas.move(self.ball,self.x_velocity,self.y_velocity)
+            try:
+                self.canvas.move(self.ball,self.x_velocity,self.y_velocity)
+            except:
+                pass
             (left_pos,top_pos,right_pos,bottom_pos) = self.canvas.coords(self.ball)
             self.collision_detection_general()
             if self.level == 1:
@@ -232,12 +253,15 @@ class Ball:
             self.x_velocity *= 0.999 #Simulate air resistance
 
         if self.is_moving(): #If we are still moving
-            (left_pos,top_pos,right_pos,bottom_pos) = self.canvas.coords(self.ball)
-            if 1190 < left_pos < 1225 and 719 <= bottom_pos <= 721 and self.x_velocity < 5: #Check if we are in the hole, not going too fast
-                self.canvas.delete(self.ball)
-                self.level_passed()
-            else: # Otherwise keep moving
-                self.canvas.after(int(self.interval*1000), self.animate_ball)
+            try: # Since this runs in the background an error message occurs when our ball gets deleted by us saving or using the boss key
+                (left_pos,top_pos,right_pos,bottom_pos) = self.canvas.coords(self.ball)
+                if 1190 < left_pos < 1225 and 719 <= bottom_pos <= 721 and self.x_velocity < 5: #Check if we are in the hole, not going too fast
+                    self.canvas.delete(self.ball)
+                    self.level_passed()
+                else: # Otherwise keep moving
+                    self.canvas.after(int(self.interval*1000), self.animate_ball)
+            except: # We use a try except to catch an error message due to us deleting ball, this does not affect the program however so we hiude the message
+                pass
         else: #If we are not moving call our restart function
             self.restart()
 
@@ -410,7 +434,7 @@ class Home(tk.Tk):
         self.load_label2.destroy()
         for line in reversed(open("scores.txt").readlines()): #Open the file in reversed order, to read the latest save in that name
             record = line.split()
-            print(record[0],record[2])
+
             if record[0] == self.name and record[2] != "Completed":
                 self.current_score = int(record[1])
                 self.start_level = int(record[2])
